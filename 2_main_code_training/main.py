@@ -10,6 +10,7 @@ import sys
 import subprocess as sp
 import pickle
 import yaml
+import pathlib
 
 ## M-L modules
 import tensorflow.keras
@@ -31,9 +32,17 @@ def parse_args():
     
     add_arg('--config','-c', type=str, default='config.yaml',help='The .yaml file that stores the configuration.')
     add_arg('--train','-tr',  action='store_true' ,dest='train' ,help='Has the model been trained?')
+    add_arg('--r', '--rotate', action='store_true', dest='rotate',
+            help="add 90°,180°,270° rotated versions of images to set")
     add_arg('-v', '--verbose', action='store_true')
-    add_arg('--gpu', type=str, choices=['None','maeve','cori'], default='None', help='Whether using gpu, if so, maeve or cori.')    
-    add_arg('--model_list', '-mdlst', nargs='+', type=int, dest='mod_lst',help=' Enter the list of model numbers to test ', required=True)
+    add_arg('--gpu', type=str, choices=['None','maeve','cori'], default='None',
+            help='Whether using gpu, if so, maeve or cori.')
+    add_arg('--gpufile', type=str, default=None,
+            help=".py file iwth configure_session for configuring GPU" )
+    add_arg('--model_list', '-mdlst', nargs='+', type=int, dest='mod_lst',
+            help=' Enter the list of model numbers to test ', required=True)
+    add_arg('--no-randomize', action='store_true',
+            help="Don't randomize the order of the input set, it's already been done" )
 
     return parser.parse_args()
 
@@ -44,18 +53,28 @@ if __name__=='__main__':
     print(args)
     ## Note: --train means models needs to be trained. hence train_status=False
     model_lst=args.mod_lst
-    pre_norm=True
+    pre_norm=False
     if pre_norm : print("Prenormalization",pre_norm)
     
     ##### Stuff for GPU #####
-    if args.gpu!='None': 
-        script_loc={'maeve':'/home/vpa/standard_scripts/','cori':'/global/u1/v/vpa/standard_scripts/'}
-        ## special imports for setting keras and tensorflow variables.
-        sys.path.insert(0,script_loc[args.gpu])
+
+    if args.gpufile is not None:
+        gpupath = pathlib.Path( args.gpufile )
+        if gpupath.name != "keras_tf_parallel_variables.py":
+            raise ValueError( "Right now, gpufile has to have filenam ekeras_tf_parallel_variables.py" )
+        sys.path.insert( 0, str( gpupath.parent ) )
         from keras_tf_parallel_variables import configure_session
-        ### Set tensorflow and keras variables
         configure_session(intra_threads=32, inter_threads=2, blocktime=1, affinity='granularity=fine,compact,1,0')
-    
+
+    else:
+        if args.gpu!='None': 
+            script_loc={'maeve':'/home/vpa/standard_scripts/','cori':'/global/u1/v/vpa/standard_scripts/'}
+            ## special imports for setting keras and tensorflow variables.
+            sys.path.insert(0,script_loc[args.gpu])
+            from keras_tf_parallel_variables import configure_session
+            ### Set tensorflow and keras variables
+            configure_session(intra_threads=32, inter_threads=2, blocktime=1, affinity='granularity=fine,compact,1,0')
+
     t1=time.time()
     
     ### Read configuration ###
@@ -79,15 +98,20 @@ if __name__=='__main__':
     train_size,val_size,test_size=int(0.7*size_data),int(0.1*size_data),int(0.2*size_data)
     
     ### Get random indices for test,train,val
-#     np.random.seed(225) # Set random seed
-    np.random.seed(737581) # Set random seed
-    test_idx=np.random.choice(np.arange(size_data),test_size,replace=False)
-    # get remaining indices without test indices
-    rem_idx1=np.array(list(set(np.arange(size_data))-set(test_idx)))
-    val_idx=np.random.choice(rem_idx1,val_size,replace=False)
-    rem_idx2=np.array(list(set(rem_idx1)-set(val_idx)))
-    train_idx=np.random.choice(rem_idx2,train_size,replace=False)
-    
+    # np.random.seed(225) # Set random seed
+    if not args.no_randomize:
+        np.random.seed(737581) # Set random seed
+        test_idx=np.random.choice(np.arange(size_data),test_size,replace=False)
+        # get remaining indices without test indices
+        rem_idx1=np.array(list(set(np.arange(size_data))-set(test_idx)))
+        val_idx=np.random.choice(rem_idx1,val_size,replace=False)
+        rem_idx2=np.array(list(set(rem_idx1)-set(val_idx)))
+        train_idx=np.random.choice(rem_idx2,train_size,replace=False)
+    else:
+        test_idx = np.arange( test_size )
+        val_idx = np.arange( test_size, test_size + val_size )
+        train_idx = np.arange( test_size + val_size, size_data )
+
     print("Shapes of indices",train_idx.shape,test_idx.shape,val_idx.shape)
     
     #### Storing arrays into train,validation, test objects and deleting the full data dictionary
@@ -96,6 +120,17 @@ if __name__=='__main__':
     test_data=dataset('test',data_dict,test_idx)
     del data_dict
 
+    ### Add 90 degree rotations if requested and rerandomize
+    ###  (to avoid ordering issues)
+    if args.rotate:
+        print( "Adding clips rotated by 90°, 180°, and 270°." )
+        train_data.add_rotations()
+        train_data.randomize_order()
+        val_data.add_rotations()
+        val_data.randomize_order()
+        test_data.add_rotations()
+        test_data.randomize_order()
+    
     print("\nData shapes: Train {0}, Validation {1}, Test {2}\n".format(train_data.x.shape,val_data.x.shape,test_data.x.shape))
     
     t2=time.time()

@@ -1,6 +1,7 @@
 ## modify this script to change the model.
 ### Add models with a new index.
 
+import copy
 from tensorflow.keras import layers, models, optimizers, callbacks  # or tensorflow.keras as keras
 from tensorflow.keras.layers import *
 import tensorflow.keras.backend as K
@@ -36,8 +37,8 @@ def f_model_prototype(shape,**model_dict):
     conv_sizes=model_dict['conv_size_list'] # Eg. [10,10,10]
     
     ### Striding
-    if model_dict['strides']==1: 
-        stride_lst=[1]*len(conv_sizes) # Default stride is 1 for each convolution.
+    if model_dict['strides'] == 1:
+        stride_lst = [1] * len(conv_sizes) # Default stride is 1 for each convolution.
     else : 
         stride_lst=model_dict['strides']
     
@@ -78,31 +79,114 @@ def f_define_model(config_dict,name='1'):
     
     resnet=False ### Variable storing whether the models is resnet or not. This is needed for specifying the loss function.    
     custom_model=False ### Variable storing whether the models is a layer-by-layer build code (not using the protytype function).    
+
+    model_list = {}
+
+    model_list[1] = {'conv_size_list': [80, 80, 80],
+                     'kernel_size': (3, 3),
+                     'no_pool': False,
+                     'pool_size': (2, 2),
+                     'strides': 1,
+                     'learn_rate': 0.00002,
+                     'inner_dropout': None,
+                     'outer_dropout': 0.3,
+                     'dense_size': 51,
+                     'final_activation': 'sigmoid',
+                     'double_conv': False }
+    model_list[2] = {'conv_size_list': [80, 80],
+                     'kernel_size': (4, 4),
+                     'no_pool': False,
+                     'pool_size': (3, 3),
+                     'strides': 1,
+                     'learn_rate': 0.00002,
+                     'inner_dropout': None,
+                     'outer_dropout': 0.3,
+                     'dense_size': 51,
+                     'final_activation': 'sigmoid',
+                     'double_conv': True }
+    model_list[3] = {'conv_size_list': [120,120] ,
+                     'kernel_size': (4,4) ,
+                     'no_pool': False ,
+                     'pool_size': (3,3) ,
+                     'strides': 1 ,
+                     'learn_rate': 0.00002 ,
+                     'inner_dropout': None ,
+                     'outer_dropout': 0.3 ,
+                     'dense_size': 51 ,
+                     'final_activation': 'sigmoid' ,
+                     'double_conv': True }
+    model_list[4] = {'conv_size_list': [40,60,80],
+                     'kernel_size': (6,6),
+                     'no_pool': True,
+                     'pool_size': (2,2),
+                     'strides': [2,2,1],
+                     'learn_rate': 0.00002,
+                     'inner_dropout': 0.1,
+                     'outer_dropout': 0.3,
+                     'dense_size': 51,
+                     'final_activation': 'sigmoid',
+                     'double_conv': False }
+
+    # models 5-8 : start with 3 as a base, vary pool size
+    # Model 3 was the best of these (batch_size 128)
     
-    # Choose model
-    if name=='1': # Simple layered, with inner dropout
-        model_par_dict={'conv_size_list':[80,80,80],'kernel_size':(3,3), 'no_pool':False,'pool_size':(2,2), 'strides':1, 'learn_rate':0.00002,
-                        'inner_dropout':None, 'outer_dropout':0.3,'dense_size':51,'final_activation':'sigmoid','double_conv':False}
-    if name=='2': # Simple layered, with inner dropout
-        model_par_dict={'conv_size_list':[80,80],'kernel_size':(4,4), 'no_pool':False,'pool_size':(3,3), 'strides':1, 'learn_rate':0.00002,
-                        'inner_dropout':None, 'outer_dropout':0.3,'dense_size':51,'final_activation':'sigmoid','double_conv':True}
-    if name=='3': # Simple layered, with inner dropout
-        model_par_dict={'conv_size_list':[120,120],'kernel_size':(4,4), 'no_pool':False,'pool_size':(3,3), 'strides':1, 'learn_rate':0.00002,
-                        'inner_dropout':None, 'outer_dropout':0.3,'dense_size':51,'final_activation':'sigmoid','double_conv':True}   
-    if name=='4': # Striding single conv
-        model_par_dict={'conv_size_list':[40,60,80],'kernel_size':(6,6), 'no_pool':True,'pool_size':(2,2), 'strides':[2,2,1], 'learn_rate':0.00002,
-                        'inner_dropout':0.1, 'outer_dropout':0.3,'dense_size':51,'final_activation':'sigmoid','double_conv':False}
+    newmods = range(5, 9)
+    poolsizes = ( 2, 3, 5, 6 )
+    for i in newmods:
+        model_list[i] = copy.deepcopy( model_list[3] )
+        model_list[i]['pool_size'] = ( poolsizes[i-newmods[0]], poolsizes[i-newmods[0]] )
+
+    # newmods 9-14 : start with 3 as base, vary kernel size
+    # Model 3 was the best of these, 10 was second (batch_size 128)
+    # Bigger sizes get really bad
+    newmods = range(9, 15)
+    kernelsizes = ( 2, 3, 5, 6, 7, 8 )
+    for i in newmods:
+        model_list[i] = copy.deepcopy( model_list[3] )
+        model_list[i]['kernel_size'] = ( kernelsizes[i-newmods[0]], kernelsizes[i-newmods[0]] )
+
+    # newmods 15-18 : start with 3 as base, futz with inner dropouts
+    # 15 was best, not a lot better than 3
     
+    newmods = range(15, 19)
+    innerdropouts = ( 0.1, 0.2, 0.3, 0.4 )
+    for i in newmods:
+        model_list[i] = copy.deepcopy( model_list[3] )
+        model_list[i]['inner_dropout'] = innerdropouts[ i - newmods[0] ]
+
+    # newmods 19-22 : start with 15 as base, futz with outer dropouts
+    # Doesn't make a lot of difference  15, 19, 20 are best, maybe 19 marginally better
+    newmods = range( 19, 23 )
+    outerdropouts = ( 0.1, 0.2, 0.4, 0.5 )
+    for i in newmods:
+        model_list[i] = copy.deepcopy( model_list[15] )
+        model_list[i]['outer_dropout'] = outerdropouts[ i - newmods[0] ]
+
+    # newmods 23-25 : start with 19 as base, futz with conv sizes and strides
+    # None of these were as good as 19
+    newmods = range( 23, 26 )
+    convsizes = ( [ 60, 100, 60 ], [40, 60, 40], [40, 60, 80] )
+    strides = ( [ 1, 2, 1], [ 1, 2, 1 ], [ 1, 2, 1 ] )
+    for i in newmods:
+        model_list[i] = copy.deepcopy( model_list[19] )
+        model_list[i]['conv_size_list'] = convsizes[ i - newmods[0] ]
+        model_list[i]['strides'] = strides[ i - newmods[0] ]
+        model_list[i]['no_pool'] = True
+        
     ############################################
     ### Add more models above
     ############################################
     ####### Compile model ######################
     ############################################
 
+    name = int(name)
+    if not name in model_list:
+        raise ValueError( f'Unknown model {name}' )
+    model_par_dict = model_list[name]
+        
     if resnet:
         print("resnet model name",name)
         opt,loss_fn=optimizers.Adam(lr=learn_rate),'sparse_categorical_crossentropy'
-    
     else : ## For non resnet models 
         if not custom_model:  ### For non-custom models, use prototype function
             outputs,inputs=f_model_prototype(shape,**model_par_dict)
@@ -112,6 +196,6 @@ def f_define_model(config_dict,name='1'):
     
     model.compile(optimizer=opt, loss=loss_fn, metrics=metrics)
     #print("model %s"%name)
-
+    
     return model
 

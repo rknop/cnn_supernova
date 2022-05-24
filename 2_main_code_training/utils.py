@@ -54,7 +54,38 @@ class dataset:
 
         self.x,self.y,self.id=data_dict['images'][idx_arr],data_dict['labels'][idx_arr],data_dict['ids'][idx_arr]
 
+    def __len__( self ):
+        return shelf.y.shape[0]
+        
+    def add_rotations(self):
+        num = len(self.x)
+        newx = np.empty( num*4, dtype=self.x.dtype )
+        newid = np.empty( num*4, dtype=self.id.dtype )
+        yshape = list( self.y.shape )
+        yshape[0] *= 4
+        newy = np.empty( yshape, dtype=self.y.dtype )
 
+        if ( len(self.y.shape) != 1 ) or ( len(self.id.shape) != 1 ):
+            raise ValueError( f"self.x.shape={self.x.shape}, self.y.shape={self.y.shape}, "
+                              f"self.id.shape={self.id.shape}" )
+        newx = np.row_stack( ( self.x, self.x, self.x, self.x ) )
+        newy = np.row_stack( ( self.y, self.y, self.y, self.y ) ).flatten()
+        newid = np.row_stack( ( self.id, self.id, self.id, self.id ) ).flatten()
+
+        newx[  num:2*num, :, :] = np.rot90( newx[0:num, :, :], 1, axes=(1,2) )
+        newx[2*num:3*num, :, :] = np.rot90( newx[0:num, :, :], 2, axes=(1,2) )
+        newx[3*num:4*num, :, :] = np.rot90( newx[0:num, :, :], 3, axes=(1,2) )
+
+        self.x = newx
+        self.y = newy
+        self.id = newid
+
+    def randomize_order(self):
+        dexes = np.random.choice( np.arange( self.y.shape[0] ), self.y.shape[0], replace=False )
+        self.x = self.x[dexes, :, :]
+        self.y = self.y[dexes]
+        self.id = self.id[dexes]
+        
 class cnn_model:
     '''
     Class to store features of cnn model such as : model_name, wts_filename, history_filename,
@@ -162,9 +193,9 @@ class cnn_model:
         ### This is just the test data, but it is useful to save it, to make the analysis part simpler
         np.savetxt(self.fname_ytest,test_data.y)
         ### Save IDs of test, train and validation data for reverse analysis
-        np.savetxt(self.fname_id_test,test_data.id)
-        np.savetxt(self.fname_id_train,train_data.id)
-        np.savetxt(self.fname_id_val,val_data.id)
+        np.savetxt(self.fname_id_test,test_data.id, fmt='%d')
+        np.savetxt(self.fname_id_train,train_data.id, fmt='%d')
+        np.savetxt(self.fname_id_val,val_data.id, fmt='%d')
 
 
 class trained_model:
